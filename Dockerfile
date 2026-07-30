@@ -14,6 +14,7 @@ FROM alpine:3.19
 
 WORKDIR /app
 COPY --from=builder /app/snmp-proxy-cache /app/snmp-proxy-cache
+COPY config/ /app/config/
 
 ENV LISTEN_PORTS="21001,21002,21003,21004,21005"
 

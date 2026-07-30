@@ -13,6 +13,8 @@ services:
     depends_on:
       - redis
     restart: always
+    volumes:
+      - ./config:/app/config
     environment:
       - LISTEN_PORTS=21001,21002,21003,21004,21005
       - REDIS_URL=redis://127.0.0.1:6379
