@@ -11,8 +11,7 @@ RUN go mod download || true
 # Copy source code
 COPY . .
 
-# Fetch dependencies & build static binary
-RUN go get github.com/gosnmp/gosnmp
+RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/snmp-sniffer ./tools/snmp_udp_listener/main.go
 
 # Minimal runtime image
