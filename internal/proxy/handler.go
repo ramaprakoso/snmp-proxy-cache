@@ -69,10 +69,11 @@ func (h *LazyHandler) ProcessPacket(device config.DeviceConfig, packet *gosnmp.S
 		entry, found := h.redis.GetCachedVarBind(ctx, device.DeviceID, v.Name)
 		if found {
 			// Cache HIT
+			asnType := parseAsn1Type(entry.DataType)
 			responseVars[i] = gosnmp.SnmpPDU{
 				Name:  v.Name,
-				Type:  parseAsn1Type(entry.DataType),
-				Value: entry.Value,
+				Type:  asnType,
+				Value: parseAsn1Value(entry.Value, asnType),
 			}
 		} else {
 			// Cache MISS
@@ -115,7 +116,7 @@ func (h *LazyHandler) ProcessPacket(device config.DeviceConfig, packet *gosnmp.S
 				continue
 			}
 
-			valStr := fmt.Sprintf("%v", pdu.Value)
+			valStr := formatPDUValue(pdu.Value)
 			dataTypeStr := pdu.Type.String()
 			_ = h.redis.SetCachedVarBind(ctx, device.DeviceID, pdu.Name, valStr, dataTypeStr)
 			fetchedMap[pdu.Name] = pdu
@@ -174,6 +175,44 @@ func ensureLeadingDot(oid string) string {
 		return "." + oid
 	}
 	return oid
+}
+
+func formatPDUValue(val interface{}) string {
+	switch v := val.(type) {
+	case []byte:
+		return string(v)
+	case string:
+		return v
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func parseAsn1Value(valStr string, asnType gosnmp.Asn1BER) interface{} {
+	switch asnType {
+	case gosnmp.OctetString:
+		return []byte(valStr)
+	case gosnmp.Integer:
+		var n int64
+		if _, err := fmt.Sscanf(valStr, "%d", &n); err == nil {
+			return int(n)
+		}
+		return valStr
+	case gosnmp.Counter32, gosnmp.Gauge32, gosnmp.TimeTicks:
+		var n uint64
+		if _, err := fmt.Sscanf(valStr, "%d", &n); err == nil {
+			return uint32(n)
+		}
+		return valStr
+	case gosnmp.Counter64:
+		var n uint64
+		if _, err := fmt.Sscanf(valStr, "%d", &n); err == nil {
+			return uint64(n)
+		}
+		return valStr
+	default:
+		return valStr
+	}
 }
 
 func parseAsn1Type(typeStr string) gosnmp.Asn1BER {
