@@ -122,9 +122,30 @@ func (h *LazyHandler) ProcessPacket(device config.DeviceConfig, packet *gosnmp.S
 
 		// Populate response for the specific requested OIDs of this client
 		for i, v := range packet.Variables {
+			varName := ensureLeadingDot(v.Name)
 			if pdu, found := fetchedMap[v.Name]; found {
+				pdu.Name = ensureLeadingDot(pdu.Name)
 				responseVars[i] = pdu
+			} else if pdu, found := fetchedMap[varName]; found {
+				pdu.Name = ensureLeadingDot(pdu.Name)
+				responseVars[i] = pdu
+			} else {
+				responseVars[i] = gosnmp.SnmpPDU{
+					Name:  varName,
+					Type:  gosnmp.NoSuchObject,
+					Value: nil,
+				}
 			}
+		}
+	}
+
+	// Ensure all response OIDs have leading dot formatting
+	for i, pdu := range responseVars {
+		if pdu.Name == "" && i < len(packet.Variables) {
+			responseVars[i].Name = ensureLeadingDot(packet.Variables[i].Name)
+			responseVars[i].Type = gosnmp.NoSuchObject
+		} else {
+			responseVars[i].Name = ensureLeadingDot(pdu.Name)
 		}
 	}
 
@@ -142,6 +163,16 @@ func (h *LazyHandler) ProcessPacket(device config.DeviceConfig, packet *gosnmp.S
 	}
 
 	return respPacket, nil
+}
+
+func ensureLeadingDot(oid string) string {
+	if oid == "" {
+		return "."
+	}
+	if !strings.HasPrefix(oid, ".") {
+		return "." + oid
+	}
+	return oid
 }
 
 func parseAsn1Type(typeStr string) gosnmp.Asn1BER {
