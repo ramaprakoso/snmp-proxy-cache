@@ -1,0 +1,30 @@
+devices:
+  - device_id: device-001
+    hostname: router-test-01
+    ip_address: 127.0.0.1
+    custom_port: 21001
+    community: public
+    snmp_version: v2c
+    profile: basic
+    site: jakarta
+    enabled: true
+
+  - device_id: device-002
+    hostname: router-test-02
+    ip_address: 127.0.0.1
+    custom_port: 21002
+    community: public
+    snmp_version: v2c
+    profile: basic
+    site: jakarta
+    enabled: true
+
+  - device_id: device-003
+    hostname: router-test-03
+    ip_address: 127.0.0.1
+    custom_port: 21003
+    community: public
+    snmp_version: v2c
+    profile: basic
+    site: jakarta
+    enabled: true

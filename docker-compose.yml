@@ -1,0 +1,8 @@
+services:
+  snmp-sniffer:
+    build: .
+    container_name: snmp-cache-sniffer
+    network_mode: host
+    restart: always
+    environment:
+      - LISTEN_PORTS=21001,21002,21003,21004,21005

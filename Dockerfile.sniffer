@@ -1,0 +1,28 @@
+# Multi-stage build for Go SNMP Packet Sniffer
+FROM golang:1.21-alpine AS builder
+
+WORKDIR /app
+
+# Copy module files and download dependencies
+COPY go.mod ./
+# COPY go.sum ./
+RUN go mod download || true
+
+# Copy source code
+COPY . .
+
+# Fetch dependencies & build static binary
+RUN go get github.com/gosnmp/gosnmp
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/snmp-sniffer ./tools/snmp_udp_listener/main.go
+
+# Minimal runtime image
+FROM alpine:3.19
+
+WORKDIR /app
+COPY --from=builder /app/snmp-sniffer /app/snmp-sniffer
+
+ENV LISTEN_PORTS="21001,21002,21003"
+
+EXPOSE 21001/udp 21002/udp 21003/udp
+
+CMD ["/app/snmp-sniffer"]

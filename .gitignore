@@ -1,0 +1,13 @@
+# Environment variables
+.env
+!.env.example
+
+# Binaries
+*.exe
+snmp-sniffer
+snmp-proxy
+bin/
+
+# OS specific
+.DS_Store
+Thumbs.db
