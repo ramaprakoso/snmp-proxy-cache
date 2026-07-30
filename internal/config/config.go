@@ -44,8 +44,16 @@ func LoadConfig() (*Config, error) {
 		cacheTTL = 120
 	}
 
-	configDir := getEnv("CONFIG_DIR", "./config")
-	devicesPath := filepath.Join(configDir, "devices.yaml")
+	devicesPath := getEnv("DEVICES_YAML_PATH", "")
+	if devicesPath == "" {
+		configDir := getEnv("CONFIG_DIR", "./config")
+		// Priority 1: OPNsense exported file name: snmp_devices_cache.yaml
+		devicesPath = filepath.Join(configDir, "snmp_devices_cache.yaml")
+		if _, err := os.Stat(devicesPath); os.IsNotExist(err) {
+			// Priority 2: Standard devices.yaml
+			devicesPath = filepath.Join(configDir, "devices.yaml")
+		}
+	}
 
 	cfg := &Config{
 		RedisURL:      redisURL,
