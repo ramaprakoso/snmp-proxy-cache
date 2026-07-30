@@ -91,7 +91,7 @@ func (h *LazyHandler) ProcessPacket(device config.DeviceConfig, packet *gosnmp.S
 		resChan := h.requestGroup.DoChan(sfKey, func() (interface{}, error) {
 			log.Printf("[CACHE MISS / REFRESH] Device %s: Prefetching 100%% Union OID List (%d OIDs)...", device.DeviceID, len(unionOIDs))
 			upstream := snmp.NewUpstreamClient(device)
-			return upstream.PollOIDs(unionOIDs)
+			return upstream.PollOIDs(packet.PDUType, unionOIDs)
 		})
 
 		res := <-resChan
@@ -108,6 +108,12 @@ func (h *LazyHandler) ProcessPacket(device config.DeviceConfig, packet *gosnmp.S
 		// Save ALL 100% Union fetched results into Redis Cache
 		fetchedMap := make(map[string]gosnmp.SnmpPDU)
 		for _, pdu := range fetchedPDUs {
+			// Skip saving invalid/tree-prefix error types into Redis
+			if pdu.Type == gosnmp.NoSuchObject || pdu.Type == gosnmp.NoSuchInstance || pdu.Type == gosnmp.Null {
+				log.Printf("[SKIP CACHE] OID %s returned invalid type %s, skipping Redis save.", pdu.Name, pdu.Type.String())
+				continue
+			}
+
 			valStr := fmt.Sprintf("%v", pdu.Value)
 			dataTypeStr := pdu.Type.String()
 			_ = h.redis.SetCachedVarBind(ctx, device.DeviceID, pdu.Name, valStr, dataTypeStr)

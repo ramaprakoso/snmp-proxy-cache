@@ -30,8 +30,8 @@ func NewUpstreamClient(device config.DeviceConfig) *UpstreamClient {
 	}
 }
 
-// PollOIDs dispatches a Get SNMP request for the provided OIDs.
-func (uc *UpstreamClient) PollOIDs(oids []string) ([]gosnmp.SnmpPDU, error) {
+// PollOIDs dispatches a Get or GetNext SNMP request for the provided OIDs.
+func (uc *UpstreamClient) PollOIDs(pduType gosnmp.PDUType, oids []string) ([]gosnmp.SnmpPDU, error) {
 	params := &gosnmp.GoSNMP{
 		Target:    uc.targetIP,
 		Port:      161,
@@ -46,9 +46,17 @@ func (uc *UpstreamClient) PollOIDs(oids []string) ([]gosnmp.SnmpPDU, error) {
 	}
 	defer params.Conn.Close()
 
-	result, err := params.Get(oids)
+	var result *gosnmp.SnmpPacket
+	var err error
+
+	if pduType == gosnmp.GetNextRequest {
+		result, err = params.GetNext(oids)
+	} else {
+		result, err = params.Get(oids)
+	}
+
 	if err != nil {
-		return nil, fmt.Errorf("upstream SNMP GET failed (%s): %w", uc.targetIP, err)
+		return nil, fmt.Errorf("upstream SNMP query failed (%s): %w", uc.targetIP, err)
 	}
 
 	return result.Variables, nil
