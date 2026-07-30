@@ -88,6 +88,39 @@ func (rs *RedisStore) SetCachedVarBind(ctx context.Context, deviceID, oid, value
 	return rs.client.Set(ctx, key, string(data), rs.ttl).Err()
 }
 
+// GetOIDRegistry retrieves the union set of all OIDs registered for a device.
+func (rs *RedisStore) GetOIDRegistry(ctx context.Context, deviceID string) ([]string, error) {
+	key := fmt.Sprintf("snmp:registry:%s", deviceID)
+	return rs.client.SMembers(ctx, key).Result()
+}
+
+// AddToOIDRegistry adds OIDs to the device's union registry.
+func (rs *RedisStore) AddToOIDRegistry(ctx context.Context, deviceID string, oids ...string) error {
+	if len(oids) == 0 {
+		return nil
+	}
+	key := fmt.Sprintf("snmp:registry:%s", deviceID)
+	args := make([]interface{}, len(oids))
+	for i, o := range oids {
+		args[i] = o
+	}
+	return rs.client.SAdd(ctx, key, args...).Err()
+}
+
+// ResetOIDRegistry wipes old OID registry and initializes a new clean union registry.
+func (rs *RedisStore) ResetOIDRegistry(ctx context.Context, deviceID string, newOIDs []string) error {
+	key := fmt.Sprintf("snmp:registry:%s", deviceID)
+	_ = rs.client.Del(ctx, key).Err()
+	if len(newOIDs) > 0 {
+		args := make([]interface{}, len(newOIDs))
+		for i, o := range newOIDs {
+			args[i] = o
+		}
+		return rs.client.SAdd(ctx, key, args...).Err()
+	}
+	return nil
+}
+
 // Close closes Redis pool.
 func (rs *RedisStore) Close() error {
 	return rs.client.Close()

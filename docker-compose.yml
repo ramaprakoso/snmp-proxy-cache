@@ -1,8 +1,20 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: snmp-proxy-redis
+    ports:
+      - "6379:6379"
+    restart: always
+
   snmp-proxy-cache:
     build: .
     container_name: snmp-proxy-cache
     network_mode: host
+    depends_on:
+      - redis
     restart: always
     environment:
       - LISTEN_PORTS=21001,21002,21003,21004,21005
+      - REDIS_URL=redis://127.0.0.1:6379
+      - REDIS_PASSWORD=
+      - CACHE_TTL_SEC=120

@@ -34,11 +34,36 @@ func (h *LazyHandler) ProcessPacket(device config.DeviceConfig, packet *gosnmp.S
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
-	responseVars := make([]gosnmp.SnmpPDU, len(packet.Variables))
-	missedOIDs := make([]string, 0)
-	missedIndexes := make([]int, 0)
+	// 1. Canonicalize requested OIDs & Update OID Registry (Pattern Shift Detection)
+	reqOIDs := make([]string, len(packet.Variables))
+	for i, v := range packet.Variables {
+		reqOIDs[i] = v.Name
+	}
 
-	// 1. Check Redis Cache for all requested OIDs (Cache Hit / Miss check)
+	// Fetch current union registry for this device
+	registeredOIDs, _ := h.redis.GetOIDRegistry(ctx, device.DeviceID)
+	regMap := make(map[string]bool)
+	for _, ro := range registeredOIDs {
+		regMap[ro] = true
+	}
+
+	var newOIDs []string
+	for _, roid := range reqOIDs {
+		if !regMap[roid] {
+			newOIDs = append(newOIDs, roid)
+		}
+	}
+
+	// Pattern Shift: if new OIDs detected, add them to Registry Memory
+	if len(newOIDs) > 0 {
+		log.Printf("[PATTERN SHIFT DETECTED] Device %s: New OID(s) %v requested. Updating OID Registry Memory...", device.DeviceID, newOIDs)
+		_ = h.redis.AddToOIDRegistry(ctx, device.DeviceID, newOIDs...)
+	}
+
+	// 2. Check Redis Cache for requested OIDs
+	responseVars := make([]gosnmp.SnmpPDU, len(packet.Variables))
+	hasMiss := false
+
 	for i, v := range packet.Variables {
 		entry, found := h.redis.GetCachedVarBind(ctx, device.DeviceID, v.Name)
 		if found {
@@ -50,17 +75,23 @@ func (h *LazyHandler) ProcessPacket(device config.DeviceConfig, packet *gosnmp.S
 			}
 		} else {
 			// Cache MISS
-			missedOIDs = append(missedOIDs, v.Name)
-			missedIndexes = append(missedIndexes, i)
+			hasMiss = true
 		}
 	}
 
-	// 2. If any OID missed, execute upstream fetch via Singleflight (preventing duplicate polls)
-	if len(missedOIDs) > 0 {
-		sfKey := fmt.Sprintf("%s:%v", device.DeviceID, missedOIDs)
+	// 3. If any OID missed, execute Upstream Fetch using 100% UNION OID LIST from Registry (Prefetch All)
+	if hasMiss {
+		// Get full Union Registry OID list (Zabbix + Cacti + Observium combined)
+		unionOIDs, err := h.redis.GetOIDRegistry(ctx, device.DeviceID)
+		if err != nil || len(unionOIDs) == 0 {
+			unionOIDs = reqOIDs
+		}
+
+		sfKey := fmt.Sprintf("poll:%s:%v", device.DeviceID, unionOIDs)
 		resChan := h.requestGroup.DoChan(sfKey, func() (interface{}, error) {
+			log.Printf("[CACHE MISS / REFRESH] Device %s: Prefetching 100%% Union OID List (%d OIDs)...", device.DeviceID, len(unionOIDs))
 			upstream := snmp.NewUpstreamClient(device)
-			return upstream.PollOIDs(missedOIDs)
+			return upstream.PollOIDs(unionOIDs)
 		})
 
 		res := <-resChan
@@ -74,16 +105,19 @@ func (h *LazyHandler) ProcessPacket(device config.DeviceConfig, packet *gosnmp.S
 			return nil, fmt.Errorf("unexpected PDU result type")
 		}
 
-		// Save fetched results to Redis Cache and populate response
-		for idx, pdu := range fetchedPDUs {
+		// Save ALL 100% Union fetched results into Redis Cache
+		fetchedMap := make(map[string]gosnmp.SnmpPDU)
+		for _, pdu := range fetchedPDUs {
 			valStr := fmt.Sprintf("%v", pdu.Value)
 			dataTypeStr := pdu.Type.String()
-
 			_ = h.redis.SetCachedVarBind(ctx, device.DeviceID, pdu.Name, valStr, dataTypeStr)
+			fetchedMap[pdu.Name] = pdu
+		}
 
-			if idx < len(missedIndexes) {
-				origIndex := missedIndexes[idx]
-				responseVars[origIndex] = pdu
+		// Populate response for the specific requested OIDs of this client
+		for i, v := range packet.Variables {
+			if pdu, found := fetchedMap[v.Name]; found {
+				responseVars[i] = pdu
 			}
 		}
 	}

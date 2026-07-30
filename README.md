@@ -39,9 +39,9 @@ Jika Anda ingin mengubah port yang didengarkan oleh sniffer, Anda dapat menyesua
 
 ```yaml
 services:
-  snmp-sniffer:
+  snmp-proxy-cache:
     build: .
-    container_name: snmp-cache-sniffer
+    container_name: snmp-proxy-cache
     network_mode: host
     restart: always
     environment:
